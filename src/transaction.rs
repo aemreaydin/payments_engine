@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
@@ -16,5 +17,5 @@ pub struct TransactionRecord {
     pub tx_type: TransactionType,
     pub client: u16,
     pub tx: u32,
-    pub amount: Option<f64>,
+    pub amount: Option<Decimal>,
 }

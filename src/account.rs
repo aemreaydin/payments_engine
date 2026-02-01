@@ -1,10 +1,12 @@
+use rust_decimal::Decimal;
+use rust_decimal::dec;
 use serde::Serialize;
 
 #[derive(Debug)]
 pub struct Account {
     pub client: u16,
-    pub available: f64,
-    pub held: f64,
+    pub available: Decimal,
+    pub held: Decimal,
     pub locked: bool,
 }
 
@@ -12,13 +14,13 @@ impl Account {
     pub fn new(client: u16) -> Self {
         Self {
             client,
-            available: 0.0,
-            held: 0.0,
+            available: dec!(0),
+            held: dec!(0),
             locked: false,
         }
     }
 
-    pub fn total(&self) -> f64 {
+    pub fn total(&self) -> Decimal {
         self.available + self.held
     }
 }
@@ -52,8 +54,8 @@ mod tests {
     fn new_account_is_zeroed() {
         let account = Account::new(1);
         assert_eq!(account.client, 1);
-        assert_eq!(account.available, 0.0);
-        assert_eq!(account.held, 0.0);
+        assert_eq!(account.available, dec!(0));
+        assert_eq!(account.held, dec!(0));
         assert!(!account.locked);
     }
 
@@ -61,19 +63,19 @@ mod tests {
     fn total_equals_available_plus_held() {
         let account = Account {
             client: 1,
-            available: 10.0,
-            held: 5.0,
+            available: dec!(10),
+            held: dec!(5),
             locked: false,
         };
-        assert!((account.total() - 15.0).abs() < f64::EPSILON);
+        assert_eq!(account.total(), dec!(15));
     }
 
     #[test]
     fn output_formats_four_decimal_places() {
         let account = Account {
             client: 1,
-            available: 1.5,
-            held: 0.0,
+            available: dec!(1.5),
+            held: dec!(0),
             locked: false,
         };
         let output = AccountOutput::from(&account);
@@ -87,8 +89,8 @@ mod tests {
     fn output_formats_round_numbers() {
         let account = Account {
             client: 2,
-            available: 3.0,
-            held: 2.0,
+            available: dec!(3),
+            held: dec!(2),
             locked: true,
         };
         let output = AccountOutput::from(&account);

@@ -10,11 +10,14 @@ pub fn process_csv<R: Read>(reader: R) -> Result<PaymentEngine, PaymentError> {
 
     let mut csv_reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
+        .flexible(true)
         .from_reader(reader);
 
     for result in csv_reader.deserialize::<TransactionRecord>() {
         let record = result?;
-        engine.process(&record);
+        if let Err(e) = engine.process(&record) {
+            eprintln!("warning: skipping transaction: {e}");
+        }
     }
 
     Ok(engine)
@@ -35,6 +38,7 @@ pub fn write_accounts<W: Write>(writer: W, engine: &PaymentEngine) -> Result<(),
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal::dec;
 
     #[test]
     fn process_csv_basic() {
@@ -47,8 +51,8 @@ withdrawal,1,3,5.0
         let engine = process_csv(csv_data.as_bytes()).unwrap();
         let a1 = engine.accounts().find(|a| a.client == 1).unwrap();
         let a2 = engine.accounts().find(|a| a.client == 2).unwrap();
-        assert!((a1.available - 5.0).abs() < f64::EPSILON);
-        assert!((a2.available - 20.0).abs() < f64::EPSILON);
+        assert_eq!(a1.available, dec!(5));
+        assert_eq!(a2.available, dec!(20));
     }
 
     #[test]
@@ -60,7 +64,7 @@ withdrawal , 1 , 2 , 5.0
 ";
         let engine = process_csv(csv_data.as_bytes()).unwrap();
         let account = engine.accounts().find(|a| a.client == 1).unwrap();
-        assert!((account.available - 5.0).abs() < f64::EPSILON);
+        assert_eq!(account.available, dec!(5));
     }
 
     #[test]
@@ -73,8 +77,8 @@ resolve,1,1,
 ";
         let engine = process_csv(csv_data.as_bytes()).unwrap();
         let account = engine.accounts().find(|a| a.client == 1).unwrap();
-        assert!((account.available - 50.0).abs() < f64::EPSILON);
-        assert!((account.held).abs() < f64::EPSILON);
+        assert_eq!(account.available, dec!(50));
+        assert_eq!(account.held, dec!(0));
     }
 
     #[test]
@@ -87,8 +91,8 @@ chargeback,1,1,
 ";
         let engine = process_csv(csv_data.as_bytes()).unwrap();
         let account = engine.accounts().find(|a| a.client == 1).unwrap();
-        assert!((account.available).abs() < f64::EPSILON);
-        assert!((account.held).abs() < f64::EPSILON);
+        assert_eq!(account.available, dec!(0));
+        assert_eq!(account.held, dec!(0));
         assert!(account.locked);
     }
 
@@ -116,6 +120,47 @@ withdrawal,2,5,3.0
     }
 
     #[test]
+    fn process_csv_flexible_columns() {
+        let csv_data = "\
+type,client,tx,amount
+deposit,1,1,50.0
+dispute,1,1
+resolve,1,1
+";
+        let engine = process_csv(csv_data.as_bytes()).unwrap();
+        let account = engine.accounts().find(|a| a.client == 1).unwrap();
+        assert_eq!(account.available, dec!(50));
+        assert_eq!(account.held, dec!(0));
+    }
+
+    #[test]
+    fn process_csv_decimal_precision() {
+        let csv_data = "\
+type,client,tx,amount
+deposit,1,1,1.2345
+deposit,1,2,0.0001
+withdrawal,1,3,0.2346
+";
+        let engine = process_csv(csv_data.as_bytes()).unwrap();
+        let account = engine.accounts().find(|a| a.client == 1).unwrap();
+        assert_eq!(account.available, dec!(1.0000));
+
+        let mut output = Vec::new();
+        write_accounts(&mut output, &engine).unwrap();
+        let output_str = String::from_utf8(output).unwrap();
+        assert!(output_str.contains("1.0000"));
+    }
+
+    #[test]
+    fn process_csv_empty_file() {
+        let csv_data = "\
+type,client,tx,amount
+";
+        let engine = process_csv(csv_data.as_bytes()).unwrap();
+        assert_eq!(engine.accounts().count(), 0);
+    }
+
+    #[test]
     fn spec_example() {
         let csv_data = "\
 type,client,tx,amount
@@ -128,15 +173,15 @@ withdrawal,2,5,3.0
         let engine = process_csv(csv_data.as_bytes()).unwrap();
 
         let a1 = engine.accounts().find(|a| a.client == 1).unwrap();
-        assert!((a1.available - 1.5).abs() < f64::EPSILON);
-        assert!((a1.held).abs() < f64::EPSILON);
-        assert!((a1.total() - 1.5).abs() < f64::EPSILON);
+        assert_eq!(a1.available, dec!(1.5));
+        assert_eq!(a1.held, dec!(0));
+        assert_eq!(a1.total(), dec!(1.5));
         assert!(!a1.locked);
 
         let a2 = engine.accounts().find(|a| a.client == 2).unwrap();
-        assert!((a2.available - 2.0).abs() < f64::EPSILON);
-        assert!((a2.held).abs() < f64::EPSILON);
-        assert!((a2.total() - 2.0).abs() < f64::EPSILON);
+        assert_eq!(a2.available, dec!(2));
+        assert_eq!(a2.held, dec!(0));
+        assert_eq!(a2.total(), dec!(2));
         assert!(!a2.locked);
     }
 }
